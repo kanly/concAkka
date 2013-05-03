@@ -4,6 +4,7 @@ import akka.actor._
 import scala.concurrent.duration._
 import akka.util.Timeout
 import scala.concurrent.Await
+import airplane.Altimeter.AltitudeUpdate
 
 //imports the default global execution context, see http://docs.scala-lang.org/overviews/core/futures.html
 
@@ -12,6 +13,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 object Altimeter {
 
   case class RateChange(amount: Float)
+
   case class AltitudeUpdate(altitude: Double)
 
 }
@@ -43,6 +45,7 @@ class Altimeter extends Actor with ActorLogging with EventSource {
       val tick = System.currentTimeMillis
       altitude = altitude + ((tick - lastTick) / 1.minute.toMillis.toFloat) * rateOfClimb
       lastTick = tick
+      sendEvent(AltitudeUpdate(altitude))
 
   }
 
@@ -80,15 +83,22 @@ object Plane {
 class Plane extends Actor with ActorLogging {
 
   import Plane._
+  import EventSource._
 
   val altimeter = context.actorOf(Props[Altimeter])
   val controls = context.actorOf(Props(new ControlSurfaces(altimeter)))
 
 
   def receive = {
+    case AltitudeUpdate(altitude) =>
+      log.info(s"Altitude is now: $altitude")
     case GiveMeControl =>
       log.info("Plane giving control")
       sender ! controls
+  }
+
+  override def preStart() {
+    altimeter ! RegisterListener(self)
   }
 }
 

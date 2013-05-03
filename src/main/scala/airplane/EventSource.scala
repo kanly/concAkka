@@ -25,7 +25,7 @@ trait EventSource {
   }
 
   def eventSourceReceiver: Receive = {
-    case RegisterListener(listener) => listeners = listeners := listener
+    case RegisterListener(listener) => listeners = listeners :+ listener
     case UnregisterListener(listener) => listeners = listeners filter { _ != listener }
   }
 }
