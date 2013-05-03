@@ -12,10 +12,11 @@ import scala.concurrent.ExecutionContext.Implicits.global
 object Altimeter {
 
   case class RateChange(amount: Float)
+  case class AltitudeUpdate(altitude: Double)
 
 }
 
-class Altimeter extends Actor with ActorLogging {
+class Altimeter extends Actor with ActorLogging with EventSource {
 
   import airplane.Altimeter._
 
@@ -31,7 +32,10 @@ class Altimeter extends Actor with ActorLogging {
 
   case object Tick
 
-  def receive = {
+  def receive = eventSourceReceiver orElse altimeterReceive
+
+  // the Receive return type identify a partial applied function in order to compose receive method as above
+  def altimeterReceive: Receive = {
     case RateChange(amount) =>
       rateOfClimb = amount.min(1.0f).max(-1.0f) * maxRateOfClimb
       log.info(s"Altimeter changed rate of climb to $rateOfClimb.")
