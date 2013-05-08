@@ -5,6 +5,7 @@ import akka.actor.{Props, ActorSystem}
 import org.scalatest.WordSpec
 import org.scalatest.matchers.MustMatchers
 import airplane.FlightAttendant.{Drink, GetDrink}
+import com.typesafe.config.ConfigFactory
 
 object TestFlightAttendant {
   def apply() = new FlightAttendant with AttendantResponsiveness {
@@ -12,7 +13,7 @@ object TestFlightAttendant {
   }
 }
 
-class CrewSpec extends TestKit(ActorSystem("CrewSpec")) with ImplicitSender with WordSpec with MustMatchers {
+class CrewSpec extends TestKit(ActorSystem("CrewSpec", ConfigFactory.parseString("akka.scheduler.tick-duration = 1ms"))) with ImplicitSender with WordSpec with MustMatchers {
 
   "FlighAttendant" should {
     "get a drink when asked" in {
