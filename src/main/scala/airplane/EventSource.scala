@@ -3,7 +3,7 @@ package airplane
 import akka.actor.{Actor, ActorRef}
 
 
-object EventSource {
+object ProductionEventSource {
 
   case class RegisterListener(listener: ActorRef)
 
@@ -12,9 +12,15 @@ object EventSource {
 }
 
 trait EventSource {
+  def sendEvent[T](event: T)
+  def eventSourceReceiver: Actor.Receive
+}
+
+
+trait ProductionEventSource extends EventSource {
   this: Actor =>
 
-  import EventSource._
+  import ProductionEventSource._
 
   var listeners = Vector.empty[ActorRef]
 

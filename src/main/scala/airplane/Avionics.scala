@@ -16,9 +16,11 @@ object Altimeter {
 
   case class AltitudeUpdate(altitude: Double)
 
+  def apply()=new Altimeter with ProductionEventSource
 }
 
-class Altimeter extends Actor with ActorLogging with EventSource {
+class Altimeter extends Actor with ActorLogging {
+  this: EventSource =>
 
   import airplane.Altimeter._
 
@@ -83,7 +85,7 @@ object Plane {
 class Plane extends Actor with ActorLogging {
 
   import Plane._
-  import EventSource._
+  import ProductionEventSource._
 
   val altimeter = context.actorOf(Props[Altimeter])
   val controls = context.actorOf(Props(new ControlSurfaces(altimeter)))
