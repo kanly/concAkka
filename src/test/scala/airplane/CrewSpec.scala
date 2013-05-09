@@ -1,7 +1,7 @@
 package airplane
 
 import akka.testkit.{TestActorRef, ImplicitSender, TestKit}
-import akka.actor.{Props, ActorSystem}
+import akka.actor.{ActorRef, Actor, Props, ActorSystem}
 import org.scalatest.{BeforeAndAfterAll, WordSpec}
 import org.scalatest.matchers.MustMatchers
 import airplane.FlightAttendant.{Drink, GetDrink}

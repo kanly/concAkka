@@ -2,9 +2,8 @@ package airplane
 
 import akka.actor._
 import scala.concurrent.duration._
-import akka.util.Timeout
-import scala.concurrent.Await
 import airplane.Altimeter.AltitudeUpdate
+import airplane.Pilots.ReadyToGo
 
 //imports the default global execution context, see http://docs.scala-lang.org/overviews/core/futures.html
 
@@ -16,7 +15,7 @@ object Altimeter {
 
   case class AltitudeUpdate(altitude: Double)
 
-  def apply()=new Altimeter with ProductionEventSource
+  def apply() = new Altimeter with ProductionEventSource
 }
 
 class Altimeter extends Actor with ActorLogging {
@@ -80,6 +79,8 @@ object Plane {
 
   case object GiveMeControl
 
+  case class Controls(controlSurfaces: ActorRef)
+
 }
 
 class Plane extends Actor with ActorLogging {
@@ -89,6 +90,11 @@ class Plane extends Actor with ActorLogging {
 
   val altimeter = context.actorOf(Props[Altimeter])
   val controls = context.actorOf(Props(new ControlSurfaces(altimeter)))
+  val config = context.system.settings.config
+  val pilot = context.actorOf(Props[Pilot], config.getString("airplane.flightcrew.pilotName"))
+  val copilot = context.actorOf(Props[CoPilot], config.getString("airplane.flightcrew.copilotName"))
+  val autopilot = context.actorOf(Props[AutoPilot], "AutoPilot")
+  val flightAttendant = context.actorOf(Props(LeadFlightAttendant()), config.getString("airplane.flightcrew.leadAttendantName"))
 
 
   def receive = {
@@ -96,54 +102,13 @@ class Plane extends Actor with ActorLogging {
       log.info(s"Altitude is now: $altitude")
     case GiveMeControl =>
       log.info("Plane giving control")
-      sender ! controls
+      sender ! Controls(controls)
   }
 
   override def preStart() {
     altimeter ! RegisterListener(self)
-  }
-}
-
-
-object Avionics {
-
-
-  //needed for ? (ask method)
-
-  import akka.pattern.ask
-
-
-  // needed for ask's future timeout below
-  implicit val timeout = Timeout(5.seconds)
-  val system = ActorSystem("PlaneSimulation")
-  val plane = system.actorOf(Props[Plane], "Plane")
-
-  def main(args: Array[String]) {
-    // Grab the controls
-    val control = Await.result(
-      (plane ? Plane.GiveMeControl).mapTo[ActorRef], 5.seconds)
-    // Takeoff!
-    system.scheduler.scheduleOnce(200.millis) {
-      control ! ControlSurfaces.StickBack(1f)
-    }
-    // Level out
-    system.scheduler.scheduleOnce(1.seconds) {
-      control ! ControlSurfaces.StickBack(0f)
-    }
-    // Climb
-    system.scheduler.scheduleOnce(3.seconds) {
-      control ! ControlSurfaces.StickBack(0.5f)
-    }
-    // Level out
-    system.scheduler.scheduleOnce(4.seconds) {
-      control ! ControlSurfaces.StickBack(0f)
-    }
-    // Shut down
-    system.scheduler.scheduleOnce(5.seconds) {
-      system.shutdown()
+    List(pilot, copilot, autopilot) foreach {
+      _ ! ReadyToGo
     }
   }
-
 }
-
-
