@@ -7,7 +7,11 @@ import org.scalatest.matchers.MustMatchers
 import airplane.FlightAttendant.{Drink, GetDrink}
 import com.typesafe.config.ConfigFactory
 import airplane.LeadFlightAttendant.{Attendant, GetFlightAttendant}
-import airplane.Altimeter.AltitudeUpdate
+import utils.{IsolatedLifeCycleSupervisor, OneForOneStrategyFactory, IsolatedStopSupervisor}
+import akka.util.Timeout
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import akka.pattern.ask
 
 object TestFlightAttendant {
   def apply() = new FlightAttendant with AttendantResponsiveness {
@@ -16,14 +20,14 @@ object TestFlightAttendant {
 }
 
 object TestLeadFlightAttendant {
-  def apply():LeadFlightAttendant = new LeadFlightAttendant with AttendantCreationPolicy {
+  def apply(): LeadFlightAttendant = new LeadFlightAttendant with AttendantCreationPolicy {
     override val numberOfAttendants = 1
 
     override def createAttendant = TestFlightAttendant()
   }
 }
 
-class CrewSpec extends TestKit(ActorSystem("CrewSpec", ConfigFactory.parseString("akka.scheduler.tick-duration = 1ms"))) with ImplicitSender with WordSpec with MustMatchers  with BeforeAndAfterAll {
+class CrewSpec extends TestKit(ActorSystem("CrewSpec", ConfigFactory.parseString("akka.scheduler.tick-duration = 1ms"))) with ImplicitSender with WordSpec with MustMatchers with BeforeAndAfterAll {
 
   override def afterAll() {
     system.shutdown()
@@ -38,7 +42,6 @@ class CrewSpec extends TestKit(ActorSystem("CrewSpec", ConfigFactory.parseString
   }
 
   "LeadFlighAttendant" should {
-    import airplane.FlightAttendant
 
     "give an attendant when asked" in {
       val act = TestActorRef(Props(TestLeadFlightAttendant()))
@@ -55,4 +58,73 @@ class CrewSpec extends TestKit(ActorSystem("CrewSpec", ConfigFactory.parseString
     }
   }
 
+}
+
+object PilotsSpec {
+  val copilotName = "Mary"
+  val pilotName = "Mark"
+  val configStr = s"""
+zzz.akka.avionics.flightcrew.copilotName = "$copilotName"
+zzz.akka.avionics.flightcrew.pilotName = "$pilotName" """
+}
+
+class PilotsSpec extends TestKit(ActorSystem("PilotsSpec",
+  ConfigFactory.parseString(PilotsSpec.configStr)))
+with ImplicitSender
+with WordSpec
+with MustMatchers {
+
+  import PilotsSpec._
+  import Plane._
+
+  "CoPilot" should {
+    "take control when the Pilot dies" in {
+      pilotsReadyToGo()
+      // Kill the Pilot
+      system.actorFor(pilotPath) ! "throw"
+      // Since the test class is the "Plane" we can
+      // expect to see this request
+      expectMsg(GiveMeControl)
+      // The girl who sent it had better be Mary
+      lastSender must be(system.actorFor(copilotPath))
+    }
+  }
+
+
+  def nilActor = system.actorOf(Props[NilActor])
+
+  val pilotPath = s"/user/TestPilots/$pilotName"
+  val copilotPath = s"/user/TestPilots/$copilotName"
+
+  def pilotsReadyToGo(): ActorRef = {
+    // The 'ask' below needs a timeout value
+    implicit val askTimeout = Timeout(4.seconds)
+    // Much like the creation we're using in the Plane
+    val a = system.actorOf(Props(new IsolatedStopSupervisor
+      with OneForOneStrategyFactory {
+      def childStarter() {
+        context.actorOf(Props[FakePilot], pilotName)
+        context.actorOf(Props(new CoPilot(testActor, nilActor,
+          nilActor)), copilotName)
+      }
+    }), "TestPilots")
+    // Wait for the mailboxes to be up and running for the children
+    Await.result(a ? IsolatedLifeCycleSupervisor.WaitForStart, 3.seconds)
+    // Tell the CoPilot that it's ready to go
+    system.actorFor(copilotPath) ! Pilots.ReadyToGo
+    a
+  }
+}
+
+class FakePilot extends Actor {
+  override def receive = {
+    case _ =>
+      throw new Exception("This exception is expected.")
+  }
+}
+
+class NilActor extends Actor {
+  def receive = {
+    case _ =>
+  }
 }
