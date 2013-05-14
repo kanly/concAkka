@@ -85,39 +85,32 @@ object Pilots {
 
 }
 
-class Pilot extends Actor {
+class Pilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef, var controls: ActorRef) extends Actor {
 
   import Pilots._
   import Plane._
 
-  var controls: ActorRef = context.system.deadLetters
   var copilot: ActorRef = context.system.deadLetters
-  var autopilot: ActorRef = context.system.deadLetters
   val copilotName = context.system.settings.config.getString("airplane.flightcrew.copilotName")
 
   def receive = {
     case ReadyToGo =>
-      context.parent ! Plane.GiveMeControl
       copilot = context.actorFor("../" + copilotName)
-      autopilot = context.actorFor("../AutoPilot")
     case Controls(controlSurfaces) =>
       controls = controlSurfaces
   }
 }
 
-class CoPilot extends Actor {
+class CoPilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef) extends Actor {
 
   import Pilots._
 
-  var controls: ActorRef = context.system.deadLetters
   var pilot: ActorRef = context.system.deadLetters
-  var autopilot: ActorRef = context.system.deadLetters
   val pilotName = context.system.settings.config.getString("airplane.flightcrew.pilotName")
 
   def receive = {
     case ReadyToGo =>
       pilot = context.actorFor("../" + pilotName)
-      autopilot = context.actorFor("../AutoPilot")
   }
 }
 
@@ -139,10 +132,12 @@ class AutoPilot extends Actor {
 }
 
 trait PilotProvider {
-  def pilot: Actor = new Pilot
+  def newPilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef, controls: ActorRef): Actor =
+    new Pilot(plane, autopilot, altimeter, controls)
 
-  def copilot: Actor = new CoPilot
+  def newCopilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef): Actor =
+    new CoPilot(plane, autopilot, altimeter)
 
-  def autopilot: Actor = new AutoPilot
+  def newAutopilot: Actor = new AutoPilot
 }
 

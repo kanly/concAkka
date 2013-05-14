@@ -1,9 +1,12 @@
 package airplane
 
+import utils.IsolatedLifeCycleSupervisor
+import IsolatedLifeCycleSupervisor.WaitForStart
 import akka.actor._
 import scala.concurrent.duration._
 import airplane.Altimeter.AltitudeUpdate
 import airplane.Pilots.ReadyToGo
+import scala.concurrent.Await
 
 //imports the default global execution context, see http://docs.scala-lang.org/overviews/core/futures.html
 
@@ -55,6 +58,9 @@ class Altimeter extends Actor with ActorLogging {
   }
 }
 
+trait AltimeterProvider {
+  def newAltimeter: Actor = Altimeter()
+}
 
 object ControlSurfaces {
 
@@ -84,18 +90,23 @@ object Plane {
 }
 
 class Plane extends Actor with ActorLogging {
+  this: AltimeterProvider
+    with PilotProvider with LeadFlightAttendantProvider =>
 
   import Plane._
   import ProductionEventSource._
+  import utils.{IsolatedStopSupervisor, IsolatedResumeSupervisor, OneForOneStrategyFactory}
 
   val altimeter = context.actorOf(Props[Altimeter])
   val controls = context.actorOf(Props(new ControlSurfaces(altimeter)))
   val config = context.system.settings.config
-  val pilot = context.actorOf(Props[Pilot], config.getString("airplane.flightcrew.pilotName"))
-  val copilot = context.actorOf(Props[CoPilot], config.getString("airplane.flightcrew.copilotName"))
+  lazy val pilotName = config.getString("airplane.flightcrew.pilotName")
+  lazy val copilotName = config.getString("airplane.flightcrew.copilotName")
+  lazy val leadAttendantName = config.getString("airplane.flightcrew.leadAttendantName")
+  val pilot = context.actorOf(Props[Pilot], pilotName)
+  val copilot = context.actorOf(Props[CoPilot], copilotName)
   val autopilot = context.actorOf(Props[AutoPilot], "AutoPilot")
-  val flightAttendant = context.actorOf(Props(LeadFlightAttendant()), config.getString("airplane.flightcrew.leadAttendantName"))
-
+  val flightAttendant = context.actorOf(Props(LeadFlightAttendant()), leadAttendantName)
 
   def receive = {
     case AltitudeUpdate(altitude) =>
@@ -106,9 +117,42 @@ class Plane extends Actor with ActorLogging {
   }
 
   override def preStart() {
-    altimeter ! RegisterListener(self)
-    List(pilot, copilot, autopilot) foreach {
-      _ ! ReadyToGo
-    }
+    startControls()
+    startPeople()
+
+    actorForControls("Altimeter") ! RegisterListener(self)
+    actorForPilots(pilotName) ! Pilots.ReadyToGo
+    actorForPilots(copilotName) ! Pilots.ReadyToGo
   }
+
+  def actorForControls(name: String) = context.actorFor("Controls/" + name)
+
+  def actorForPilots(name: String) = context.actorFor("Pilots/" + name)
+
+  def startControls() {
+    val controls = context.actorOf(Props(new IsolatedResumeSupervisor with OneForOneStrategyFactory {
+      def childStarter() {
+        val alt = context.actorOf(Props(newAltimeter), "Altimeter")
+        context.actorOf(Props(newAutopilot), "AutoPilot")
+        context.actorOf(Props(new ControlSurfaces(alt)), "ControlSurfaces")
+      }
+    }), "Controls")
+    Await.result(controls ? WaitForStart, 1.second)
+  }
+
+  def startPeople() {
+    val plane = self
+    val controls = actorForControls("ControlSurfaces")
+    val autopilot = actorForControls("AutoPilot")
+    val altimeter = actorForControls("Altimeter")
+    val people = context.actorOf(Props(new IsolatedStopSupervisor() with OneForOneStrategyFactory {
+      def childStarter() {
+        context.actorOf(Props(newPilot(plane, autopilot, altimeter, controls)), pilotName)
+        context.actorOf(Props(newCopilot(plane, autopilot, altimeter)), copilotName)
+      }
+    }), "Pilots")
+    context.actorOf(Props(newFlightAttendant), leadAttendantName)
+    Await.result(people ? WaitForStart, 1.second)
+  }
+
 }
