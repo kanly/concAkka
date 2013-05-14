@@ -35,6 +35,7 @@ object IsolatedLifeCycleSupervisor {
 }
 
 trait IsolatedLifeCycleSupervisor extends Actor {
+  import IsolatedLifeCycleSupervisor._
 
   def receive = {
     case WaitForStart => sender ! Started
