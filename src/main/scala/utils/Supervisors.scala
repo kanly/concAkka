@@ -1,5 +1,6 @@
+package utils
 
-import _root_.IsolatedLifeCycleSupervisor.{Started, WaitForStart}
+
 import akka.actor._
 import akka.actor.AllForOneStrategy
 import akka.actor.OneForOneStrategy
@@ -64,6 +65,19 @@ abstract class IsolatedResumeSupervisor(maxNrRetries: Int = -1, withinTimeRange:
     case _: ActorInitializationException => Stop
     case _: ActorKilledException => Stop
     case _: Exception => Resume
+    case _ => Escalate
+  }
+}
+
+abstract class IsolatedStopSupervisor(maxNrRetries: Int = -1, withinTimeRange: Duration = Duration.Inf)
+  extends IsolatedLifeCycleSupervisor {
+
+  this: SupervisionStrategyFactory =>
+
+  override def supervisorStrategy = makeStrategy(maxNrRetries,withinTimeRange){
+    case _: ActorInitializationException => Stop
+    case _: ActorKilledException => Stop
+    case _: Exception => Stop
     case _ => Escalate
   }
 }
