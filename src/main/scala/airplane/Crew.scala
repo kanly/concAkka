@@ -3,9 +3,10 @@ package airplane
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Random
 import scala.concurrent.duration._
-import akka.actor.{Props, ActorRef, Actor}
+import akka.actor.{Terminated, Props, ActorRef, Actor}
 import airplane.FlightAttendant.{Drink, GetDrink}
 import airplane.LeadFlightAttendant.{GetFlightAttendant, Attendant}
+import airplane.Plane.{Controls, GiveMeControl}
 
 trait AttendantResponsiveness {
   val maxResponseTimeMS: Int
@@ -107,10 +108,16 @@ class CoPilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef) extends
 
   var pilot: ActorRef = context.system.deadLetters
   val pilotName = context.system.settings.config.getString("airplane.flightcrew.pilotName")
+  var controls = context.system.deadLetters
 
   def receive = {
     case ReadyToGo =>
       pilot = context.actorFor("../" + pilotName)
+      context.watch(pilot)
+    case Terminated(_) =>
+      plane ! GiveMeControl
+    case Controls(controlSurfaces) =>
+      controls = controlSurfaces
   }
 }
 
