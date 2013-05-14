@@ -96,6 +96,7 @@ class Plane extends Actor with ActorLogging {
   import Plane._
   import ProductionEventSource._
   import utils.{IsolatedStopSupervisor, IsolatedResumeSupervisor, OneForOneStrategyFactory}
+  import akka.pattern.ask
 
   val altimeter = context.actorOf(Props[Altimeter])
   val controls = context.actorOf(Props(new ControlSurfaces(altimeter)))
