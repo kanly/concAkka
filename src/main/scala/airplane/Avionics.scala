@@ -5,8 +5,8 @@ import IsolatedLifeCycleSupervisor.WaitForStart
 import akka.actor._
 import scala.concurrent.duration._
 import airplane.Altimeter.AltitudeUpdate
-import airplane.Pilots.ReadyToGo
 import scala.concurrent.Await
+import akka.util.Timeout
 
 //imports the default global execution context, see http://docs.scala-lang.org/overviews/core/futures.html
 
@@ -131,6 +131,7 @@ class Plane extends Actor with ActorLogging {
   def actorForPilots(name: String) = context.actorFor("Pilots/" + name)
 
   def startControls() {
+    implicit val timeout = Timeout(5 seconds)
     val controls = context.actorOf(Props(new IsolatedResumeSupervisor with OneForOneStrategyFactory {
       def childStarter() {
         val alt = context.actorOf(Props(newAltimeter), "Altimeter")
@@ -138,10 +139,11 @@ class Plane extends Actor with ActorLogging {
         context.actorOf(Props(new ControlSurfaces(alt)), "ControlSurfaces")
       }
     }), "Controls")
-    Await.result(controls ? WaitForStart, 1.second)
+    Await.result(controls ? WaitForStart, timeout.duration)
   }
 
   def startPeople() {
+    implicit val timeout = Timeout(5 seconds)
     val plane = self
     val controls = actorForControls("ControlSurfaces")
     val autopilot = actorForControls("AutoPilot")
@@ -153,7 +155,7 @@ class Plane extends Actor with ActorLogging {
       }
     }), "Pilots")
     context.actorOf(Props(newFlightAttendant), leadAttendantName)
-    Await.result(people ? WaitForStart, 1.second)
+    Await.result(people ? WaitForStart, timeout.duration)
   }
 
 }
