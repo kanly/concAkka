@@ -13,6 +13,10 @@ object Plane {
 
   case class Controls(controlSurfaces: ActorRef)
 
+  case object WhoIsCopilot
+
+  case class Copilot(copilot: ActorRef)
+
 }
 
 class Plane extends Actor with ActorLogging {
@@ -41,6 +45,9 @@ class Plane extends Actor with ActorLogging {
     case GiveMeControl =>
       log.info("Plane giving control")
       sender ! Controls(controls)
+    case WhoIsCopilot =>
+      log.info("Plane returning copilot")
+      sender ! Copilot(copilot)
   }
 
   override def preStart() {
@@ -61,7 +68,7 @@ class Plane extends Actor with ActorLogging {
     val controls = context.actorOf(Props(new IsolatedResumeSupervisor with OneForOneStrategyFactory {
       def childStarter() {
         val alt = context.actorOf(Props(newAltimeter), "Altimeter")
-        context.actorOf(Props(newAutopilot), "AutoPilot")
+        context.actorOf(Props(newAutopilot(self)), "AutoPilot")
         context.actorOf(Props(new ControlSurfaces(alt)), "ControlSurfaces")
       }
     }), "Controls")

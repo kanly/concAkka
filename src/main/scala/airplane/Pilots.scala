@@ -1,7 +1,7 @@
 package airplane
 
 import akka.actor.{Terminated, ActorRef, Actor}
-import airplane.Plane.{Controls, GiveMeControl}
+import airplane.Plane.{Copilot, WhoIsCopilot, Controls, GiveMeControl}
 
 
 object Pilots {
@@ -47,20 +47,21 @@ class CoPilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef) extends
   }
 }
 
-class AutoPilot extends Actor {
+class AutoPilot(plane: ActorRef) extends Actor {
 
   import Pilots._
 
   var controls: ActorRef = context.system.deadLetters
-  var pilot: ActorRef = context.system.deadLetters
   var copilot: ActorRef = context.system.deadLetters
-  val pilotName = context.system.settings.config.getString("airplane.flightcrew.pilotName")
-  val copilotName = context.system.settings.config.getString("airplane.flightcrew.copilotName")
 
   def receive = {
     case ReadyToGo =>
-      pilot = context.actorFor("../" + pilotName)
-      copilot = context.actorFor("../" + copilotName)
+      plane ! WhoIsCopilot
+    case Copilot(pilot) =>
+      copilot = pilot
+      context.watch(copilot)
+    case Terminated(_) =>
+      plane ! GiveMeControl
   }
 }
 
@@ -71,6 +72,6 @@ trait PilotProvider {
   def newCopilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef): Actor =
     new CoPilot(plane, autopilot, altimeter)
 
-  def newAutopilot: Actor = new AutoPilot
+  def newAutopilot(plane: ActorRef): Actor = new AutoPilot(plane)
 }
 
