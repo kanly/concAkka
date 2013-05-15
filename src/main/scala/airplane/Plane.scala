@@ -1,85 +1,11 @@
 package airplane
 
-import utils.IsolatedLifeCycleSupervisor
-import IsolatedLifeCycleSupervisor.WaitForStart
-import akka.actor._
+import akka.actor.{Props, ActorLogging, Actor, ActorRef}
+import akka.util.Timeout
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import airplane.Altimeter.AltitudeUpdate
-import scala.concurrent.Await
-import akka.util.Timeout
-
-//imports the default global execution context, see http://docs.scala-lang.org/overviews/core/futures.html
-
-import scala.concurrent.ExecutionContext.Implicits.global
-
-object Altimeter {
-
-  case class RateChange(amount: Float)
-
-  case class AltitudeUpdate(altitude: Double)
-
-  def apply() = new Altimeter with ProductionEventSource
-}
-
-class Altimeter extends Actor with ActorLogging {
-  this: EventSource =>
-
-  import airplane.Altimeter._
-
-
-  val ceiling = 43000
-  val maxRateOfClimb = 5000
-
-  var rateOfClimb: Float = 0.0f
-  var altitude: Double = 0.0
-
-  var lastTick = System.currentTimeMillis
-  val ticker = context.system.scheduler.schedule(100 millis, 100 millis, self, Tick)
-
-  case object Tick
-
-  def receive = eventSourceReceiver orElse altimeterReceive
-
-  // the Receive return type identify a partial applied function in order to compose receive method as above
-  def altimeterReceive: Receive = {
-    case RateChange(amount) =>
-      rateOfClimb = amount.min(1.0f).max(-1.0f) * maxRateOfClimb
-      log.info(s"Altimeter changed rate of climb to $rateOfClimb.")
-    case Tick =>
-      val tick = System.currentTimeMillis
-      altitude = altitude + ((tick - lastTick) / 1.minute.toMillis.toFloat) * rateOfClimb
-      lastTick = tick
-      sendEvent(AltitudeUpdate(altitude))
-
-  }
-
-  override def postStop() {
-    ticker.cancel()
-  }
-}
-
-trait AltimeterProvider {
-  def newAltimeter: Actor = Altimeter()
-}
-
-object ControlSurfaces {
-
-  case class StickBack(amount: Float)
-
-  case class StickForward(amount: Float)
-
-}
-
-class ControlSurfaces(altimeter: ActorRef) extends Actor {
-
-  import ControlSurfaces._
-  import Altimeter._
-
-  def receive = {
-    case StickBack(amount) => altimeter ! RateChange(amount)
-    case StickForward(amount) => altimeter ! RateChange(-amount)
-  }
-}
+import utils.IsolatedLifeCycleSupervisor.WaitForStart
 
 object Plane {
 
