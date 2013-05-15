@@ -12,6 +12,8 @@ import akka.util.Timeout
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import akka.pattern.ask
+import airplane.Pilots.ReadyToGo
+import helper.ActorSys
 
 object TestFlightAttendant {
   def apply() = new FlightAttendant with AttendantResponsiveness {
@@ -61,6 +63,7 @@ class CrewSpec extends TestKit(ActorSystem("CrewSpec", ConfigFactory.parseString
 }
 
 object PilotsSpec {
+  val fakeCopilotName = "Jane"
   val copilotName = "Mary"
   val pilotName = "Mark"
   val configStr = s"""
@@ -79,7 +82,10 @@ with MustMatchers {
 
   "CoPilot" should {
     "take control when the Pilot dies" in {
-      pilotsReadyToGo()
+      implicit val actorSys: SysProp = SysProp("CoPilotTest")
+
+      pilotsReadyToGo
+      system.actorFor(copilotPath) ! Pilots.ReadyToGo
       // Kill the Pilot
       system.actorFor(pilotPath) ! "throw"
       // Since the test class is the "Plane" we can
@@ -90,13 +96,39 @@ with MustMatchers {
     }
   }
 
+  "Autopilot" should {
+    "take control when che Copilot dies" in {
+      implicit val actorSys: SysProp = SysProp("AutoPilotTest")
+
+      pilotsReadyToGo
+
+      val autopilot = system.actorOf(Props(new AutoPilot(testActor)))
+      val fakeCopilot = system.actorFor(fakeCopilotPath)
+
+      autopilot ! ReadyToGo
+
+      expectMsg(WhoIsCopilot)
+      lastSender ! Copilot(fakeCopilot)
+
+      fakeCopilot ! "die!"
+
+      expectMsg(GiveMeControl)
+      lastSender must be(autopilot)
+    }
+  }
+
+  case class SysProp(name: String)
 
   def nilActor = system.actorOf(Props[NilActor])
 
-  val pilotPath = s"/user/TestPilots/$pilotName"
-  val copilotPath = s"/user/TestPilots/$copilotName"
+  def pilotPath(implicit actorSys: SysProp) = s"/user/${actorSys.name}/$pilotName"
 
-  def pilotsReadyToGo(): ActorRef = {
+  def copilotPath(implicit actorSys: SysProp) = s"/user/${actorSys.name}/$copilotName"
+
+  def fakeCopilotPath(implicit actorSys: SysProp) = s"/user/${actorSys.name}/$fakeCopilotName"
+
+
+  def pilotsReadyToGo(implicit actorSys: SysProp): Unit = {
     // The 'ask' below needs a timeout value
     implicit val askTimeout = Timeout(4.seconds)
     // Much like the creation we're using in the Plane
@@ -104,15 +136,15 @@ with MustMatchers {
       with OneForOneStrategyFactory {
       def childStarter() {
         context.actorOf(Props[FakePilot], pilotName)
+        context.actorOf(Props[FakePilot], fakeCopilotName)
         context.actorOf(Props(new CoPilot(testActor, nilActor,
           nilActor)), copilotName)
       }
-    }), "TestPilots")
+    }), actorSys.name)
     // Wait for the mailboxes to be up and running for the children
     Await.result(a ? IsolatedLifeCycleSupervisor.WaitForStart, 3.seconds)
     // Tell the CoPilot that it's ready to go
-    system.actorFor(copilotPath) ! Pilots.ReadyToGo
-    a
+
   }
 }
 
