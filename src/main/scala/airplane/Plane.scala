@@ -20,7 +20,7 @@ object Plane {
 }
 
 class Plane extends Actor with ActorLogging {
-  this: AltimeterProvider
+  this: InstrumentationProvider
     with PilotProvider with LeadFlightAttendantProvider =>
 
   import Plane._
@@ -28,26 +28,21 @@ class Plane extends Actor with ActorLogging {
   import utils.{IsolatedStopSupervisor, IsolatedResumeSupervisor, OneForOneStrategyFactory}
   import akka.pattern.ask
 
-  val altimeter = context.actorOf(Props[Altimeter])
-  val controls = context.actorOf(Props(new ControlSurfaces(altimeter)))
   val config = context.system.settings.config
   lazy val pilotName = config.getString("airplane.flightcrew.pilotName")
   lazy val copilotName = config.getString("airplane.flightcrew.copilotName")
   lazy val leadAttendantName = config.getString("airplane.flightcrew.leadAttendantName")
-  val pilot = context.actorOf(Props[Pilot], pilotName)
-  val copilot = context.actorOf(Props[CoPilot], copilotName)
-  val autopilot = context.actorOf(Props[AutoPilot], "AutoPilot")
-  val flightAttendant = context.actorOf(Props(LeadFlightAttendant()), leadAttendantName)
+  val controlSurfacesName = "ControlSurfaces"
 
   def receive = {
     case AltitudeUpdate(altitude) =>
       log.info(s"Altitude is now: $altitude")
     case GiveMeControl =>
       log.info("Plane giving control")
-      sender ! Controls(controls)
+      sender ! Controls(actorForControls(controlSurfacesName))
     case WhoIsCopilot =>
       log.info("Plane returning copilot")
-      sender ! Copilot(copilot)
+      sender ! Copilot(actorForPilots(copilotName))
   }
 
   override def preStart() {
@@ -68,8 +63,9 @@ class Plane extends Actor with ActorLogging {
     val controls = context.actorOf(Props(new IsolatedResumeSupervisor with OneForOneStrategyFactory {
       def childStarter() {
         val alt = context.actorOf(Props(newAltimeter), "Altimeter")
+        val headProv = context.actorOf(Props(newHeadingIndicator), "HeadingIndicator")
         context.actorOf(Props(newAutopilot(self)), "AutoPilot")
-        context.actorOf(Props(new ControlSurfaces(alt)), "ControlSurfaces")
+        context.actorOf(Props(new ControlSurfaces(alt, headProv)), controlSurfacesName)
       }
     }), "Controls")
     Await.result(controls ? WaitForStart, timeout.duration)
@@ -78,13 +74,14 @@ class Plane extends Actor with ActorLogging {
   def startPeople() {
     implicit val timeout = Timeout(5 seconds)
     val plane = self
-    val controls = actorForControls("ControlSurfaces")
+    val controls = actorForControls(controlSurfacesName)
     val autopilot = actorForControls("AutoPilot")
     val altimeter = actorForControls("Altimeter")
+    val headingIndicator = actorForControls("HeadingIndicator")
     val people = context.actorOf(Props(new IsolatedStopSupervisor() with OneForOneStrategyFactory {
       def childStarter() {
-        context.actorOf(Props(newPilot(plane, autopilot, altimeter, controls)), pilotName)
-        context.actorOf(Props(newCopilot(plane, autopilot, altimeter)), copilotName)
+        context.actorOf(Props(newPilot(plane, autopilot, altimeter, headingIndicator, controls)), pilotName)
+        context.actorOf(Props(newCopilot(plane, autopilot, altimeter, headingIndicator)), copilotName)
       }
     }), "Pilots")
     context.actorOf(Props(newFlightAttendant), leadAttendantName)

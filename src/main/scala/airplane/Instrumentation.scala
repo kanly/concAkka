@@ -50,7 +50,52 @@ class Altimeter extends Actor with ActorLogging {
   }
 }
 
-trait AltimeterProvider {
+object HeadingIndicator {
+
+  case class BankChange(amount: Float)
+
+  case class HeadingUpdate(heading: Float)
+
+  def apply() = new HeadingIndicator with ProductionEventSource
+
+}
+
+class HeadingIndicator extends Actor with ActorLogging {
+  this: EventSource =>
+
+  import HeadingIndicator._
+
+  case object Tick
+
+  val maxDegPerSec = 5
+  val ticker = context.system.scheduler.schedule(100.millis, 100.millis,
+    self, Tick)
+  var lastTick: Long = System.currentTimeMillis
+  var rateOfBank = 0f
+  var heading = 0f
+
+  def receive = eventSourceReceiver orElse headingIndicatorReceiver
+
+  def headingIndicatorReceiver: Receive = {
+    case BankChange(amount) =>
+      rateOfBank = amount.min(1.0f).max(-1.0f)
+    case Tick =>
+      val tick = System.currentTimeMillis()
+      val timeDelta = tick - lastTick
+      val degs = rateOfBank * maxDegPerSec
+      heading = (heading + (360 + (timeDelta * degs))) % 360
+      lastTick = tick
+      sendEvent(HeadingUpdate(heading))
+  }
+
+  override def postStop() {
+    ticker.cancel()
+  }
+}
+
+trait InstrumentationProvider {
   def newAltimeter: Actor = Altimeter()
+
+  def newHeadingIndicator: Actor = HeadingIndicator()
 }
 

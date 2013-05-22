@@ -66,10 +66,10 @@ class AutoPilot(plane: ActorRef) extends Actor {
 }
 
 trait PilotProvider {
-  def newPilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef, controls: ActorRef): Actor =
+  def newPilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef, headingControl: ActorRef, controls: ActorRef): Actor =
     new Pilot(plane, autopilot, altimeter, controls)
 
-  def newCopilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef): Actor =
+  def newCopilot(plane: ActorRef, autopilot: ActorRef, altimeter: ActorRef, headingControl: ActorRef): Actor =
     new CoPilot(plane, autopilot, altimeter)
 
   def newAutopilot(plane: ActorRef): Actor = new AutoPilot(plane)
