@@ -6,6 +6,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import airplane.Altimeter.AltitudeUpdate
 import utils.IsolatedLifeCycleSupervisor.WaitForStart
+import airplane.ControlSurfaces.HasControl
 
 object Plane {
 
@@ -39,7 +40,9 @@ class Plane extends Actor with ActorLogging {
       log.info(s"Altitude is now: $altitude")
     case GiveMeControl =>
       log.info("Plane giving control")
-      sender ! Controls(actorForControls(controlSurfacesName))
+      val controls = actorForControls(controlSurfacesName)
+      controls ! HasControl(sender)
+      sender ! Controls(controls)
     case WhoIsCopilot =>
       log.info("Plane returning copilot")
       sender ! Copilot(actorForPilots(copilotName))
@@ -65,7 +68,7 @@ class Plane extends Actor with ActorLogging {
         val alt = context.actorOf(Props(newAltimeter), "Altimeter")
         val headProv = context.actorOf(Props(newHeadingIndicator), "HeadingIndicator")
         context.actorOf(Props(newAutopilot(self)), "AutoPilot")
-        context.actorOf(Props(new ControlSurfaces(alt, headProv)), controlSurfacesName)
+        context.actorOf(Props(new ControlSurfaces(self, alt, headProv)), controlSurfacesName)
       }
     }), "Controls")
     Await.result(controls ? WaitForStart, timeout.duration)

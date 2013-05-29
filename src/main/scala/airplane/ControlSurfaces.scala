@@ -12,20 +12,26 @@ object ControlSurfaces {
 
   case class StickLeft(amount: Float)
 
+  case class HasControl(pilot: ActorRef)
+
 
 }
 
-class ControlSurfaces(altimeter: ActorRef, headingIndicator: ActorRef) extends Actor {
+class ControlSurfaces(plane: ActorRef, altimeter: ActorRef, headingIndicator: ActorRef) extends Actor {
 
   import ControlSurfaces._
   import Altimeter._
   import HeadingIndicator._
 
-  def receive = {
-    case StickBack(amount) => altimeter ! RateChange(amount)
-    case StickForward(amount) => altimeter ! RateChange(-amount)
-    case StickRight(amount) => headingIndicator ! BankChange(amount)
-    case StickLeft(amount) => headingIndicator ! BankChange(-amount)
+
+  def receive = controlledBy(context.system.deadLetters)
+
+  def controlledBy(somePilot: ActorRef): Receive = {
+    case StickBack(amount) if (sender == somePilot) => altimeter ! RateChange(amount)
+    case StickForward(amount) if (sender == somePilot) => altimeter ! RateChange(-amount)
+    case StickRight(amount) if (sender == somePilot) => headingIndicator ! BankChange(amount)
+    case StickLeft(amount) if (sender == somePilot) => headingIndicator ! BankChange(-amount)
+    case HasControl(pilot) if (sender == plane) => context.become(controlledBy(pilot))
   }
 }
 
