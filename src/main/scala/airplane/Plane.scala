@@ -12,6 +12,8 @@ object Plane {
 
   case object GiveMeControl
 
+  case object LostControl
+
   case class Controls(controlSurfaces: ActorRef)
 
   case object WhoIsCopilot
@@ -43,6 +45,8 @@ class Plane extends Actor with ActorLogging {
       val controls = actorForControls(controlSurfacesName)
       controls ! HasControl(sender)
       sender ! Controls(controls)
+    case LostControl =>
+      actorForControls(controlSurfacesName) ! HasControl(context.system.deadLetters)
     case WhoIsCopilot =>
       log.info("Plane returning copilot")
       sender ! Copilot(actorForPilots(copilotName))
