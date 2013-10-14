@@ -1,5 +1,6 @@
 package airplane
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.{Actor, ActorRef}
 import scala.concurrent.duration._
 
