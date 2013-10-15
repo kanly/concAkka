@@ -7,6 +7,7 @@ import scala.concurrent.duration._
 import airplane.Altimeter.AltitudeUpdate
 import utils.IsolatedLifeCycleSupervisor.WaitForStart
 import airplane.ControlSurfaces.HasControl
+import akka.routing.FromConfig
 
 object Plane {
 
@@ -85,13 +86,14 @@ class Plane extends Actor with ActorLogging {
     val autopilot = actorForControls("AutoPilot")
     val altimeter = actorForControls("Altimeter")
     val headingIndicator = actorForControls("HeadingIndicator")
+    val leadAttendant = context.actorOf(Props(newFlightAttendant).withRouter(FromConfig()), "LeadFlightAttendant")
     val people = context.actorOf(Props(new IsolatedStopSupervisor() with OneForOneStrategyFactory {
       def childStarter() {
+        context.actorOf(Props(PassengerSupervisor(leadAttendant)), "Passengers")
         context.actorOf(Props(newPilot(plane, autopilot, altimeter, headingIndicator, controls)), pilotName)
         context.actorOf(Props(newCopilot(plane, autopilot, altimeter, headingIndicator)), copilotName)
       }
     }), "Pilots")
-    context.actorOf(Props(newFlightAttendant), leadAttendantName)
     Await.result(people ? WaitForStart, timeout.duration)
   }
 
