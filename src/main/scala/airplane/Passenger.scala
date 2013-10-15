@@ -1,12 +1,18 @@
 package airplane
 
 import scala.concurrent.duration._
-import akka.actor.{ActorLogging, ActorRef, Actor}
+import akka.actor._
 import scala.collection.JavaConverters._
 import airplane.FlightAttendant.{Drink, GetDrink}
 import airplane.Passenger.{UnfastenSeatbelts, FastenSeatbelts}
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import akka.actor.SupervisorStrategy.{Stop, Escalate, Resume}
+import akka.actor.ActorKilledException
+import airplane.FlightAttendant.GetDrink
+import airplane.FlightAttendant.Drink
+import airplane.PassengerSupervisor.{PassengerBroadcaster, GetPassengerBroadcaster}
+import akka.routing.BroadcastRouter
 
 class Passenger(callButton: ActorRef) extends Actor with ActorLogging {
   this: DrinkRequestProbability =>
@@ -72,5 +78,74 @@ trait DrinkRequestProbability {
 trait PassengerProvider {
   def newPassenger(callButton: ActorRef): Actor =
     new Passenger(callButton) with DrinkRequestProbability
+}
+
+object PassengerSupervisor {
+
+  case object GetPassengerBroadcaster
+
+  case class PassengerBroadcaster(broadCaster: ActorRef)
+
+  def apply(callButton: ActorRef) = new PassengerSupervisor(callButton) with PassengerProvider
+}
+
+class PassengerSupervisor(callButton: ActorRef) extends Actor {
+  this: PassengerProvider =>
+
+
+  override val supervisorStrategy = OneForOneStrategy() {
+    case _: ActorKilledException => Escalate
+    case _: ActorInitializationException => Escalate
+    case _ => Resume
+  }
+
+  case class GetChildren(forSomeone: ActorRef)
+
+  case class Children(children: Iterable[ActorRef], childrenFor: ActorRef)
+
+  override def preStart() {
+    //IsolatedStopSupervisor
+    context.actorOf(Props(new Actor {
+      val config = context.system.settings.config
+      override val supervisorStrategy = OneForOneStrategy() {
+        case _: ActorKilledException => Escalate
+        case _: ActorInitializationException => Escalate
+        case _ => Stop
+      }
+
+      override def preStart() {
+        import scala.collection.JavaConverters._
+        import com.typesafe.config.ConfigList
+        val passengers = config.getList("airplane.passengers")
+        passengers.asScala.foreach {
+          nameWithSeat =>
+            val id = nameWithSeat.asInstanceOf[ConfigList].unwrapped(
+            ).asScala.mkString("-").replaceAllLiterally(" ", "_")
+            context.actorOf(Props(newPassenger(callButton)), id)
+        }
+      }
+
+      override def receive = {
+        case GetChildren(forSomeone: ActorRef) =>
+          sender ! Children(context.children, forSomeone)
+      }
+    }), "PassengersSupervisor")
+  }
+
+  def noRouter: Receive = {
+    case GetPassengerBroadcaster =>
+      context.actorFor("PassengersSupervisor") ! GetChildren(sender)
+    case Children(passengers, destinedFor) =>
+      val router = context.actorOf(Props().withRouter(
+        BroadcastRouter(passengers.toSeq)), "Passengers")
+      destinedFor ! PassengerBroadcaster(router)
+      context.become(withRouter(router))
+  }
+  def withRouter(router: ActorRef): Receive = {
+    case GetPassengerBroadcaster =>
+      sender ! PassengerBroadcaster(router)
+  }
+  def receive:Receive = noRouter
+
 }
 
