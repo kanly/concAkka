@@ -2,15 +2,17 @@ package airplane
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Random
-import akka.actor.{Cancellable, Props, ActorRef, Actor}
+import akka.actor._
 import scala.concurrent.duration._
 import airplane.FlightAttendant._
 import airplane.LeadFlightAttendant.GetFlightAttendant
+import akka.routing.{Destination, RouteeProvider, RouterConfig}
 import airplane.FlightAttendant.Assist
 import airplane.FlightAttendant.GetDrink
 import airplane.FlightAttendant.Drink
 import scala.Some
 import airplane.LeadFlightAttendant.Attendant
+import akka.dispatch.Dispatchers
 
 trait AttendantResponsiveness {
   val maxResponseTimeMS: Int
@@ -92,6 +94,10 @@ class FlightAttendant extends Actor {
 
 }
 
+trait FlightAttendantProvider {
+  def newFlightAttendant:Actor = FlightAttendant()
+}
+
 trait AttendantCreationPolicy {
   val numberOfAttendants = 8
 
@@ -134,5 +140,27 @@ class LeadFlightAttendant extends Actor {
     case m =>
       randomAttendant() forward m
   }
+}
+
+// choose attendants by airplane zone (rows)
+class SectionSpecificAttendantRouter extends RouterConfig {
+  this: FlightAttendantProvider =>
+
+  def createRoute(routeeProvider: RouteeProvider): _root_.akka.routing.Route = {
+    val attendants = (1 to 5) map {
+      n => routeeProvider.context.actorOf(Props(newFlightAttendant), "Attendant" + n)
+    }
+    routeeProvider.registerRoutees(attendants)
+
+    {
+      case (sender, message) =>
+        val Passenger.SeatAssignment(_, row, _) = sender.path.name
+        List(Destination(sender, attendants(math.floor(row.toInt / 11).toInt)))
+    }
+  }
+
+  def supervisorStrategy: SupervisorStrategy = SupervisorStrategy.defaultStrategy
+
+  def routerDispatcher: String = Dispatchers.DefaultDispatcherId
 }
 
